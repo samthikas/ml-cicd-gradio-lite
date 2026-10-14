@@ -153,10 +153,13 @@
               Float32Array.from([naToK]), [1, 1])
           };
 
+          
           const output = await session.run(feeds);
-          const label = output.label.data[0];
-          const probabilities = output.probabilities.data;
+
+          const label = output.output_label.data[0];
+          const probabilities = output.output_probability.data;
           const confidence = Math.max(...probabilities);
+
 
           document.getElementById("predicted-class").textContent =
             String(label);
