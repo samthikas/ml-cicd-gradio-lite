@@ -81,7 +81,6 @@
 <body>
   <div class="container">
     <h1>Drug Classification</h1>
-
     <p>Enter the dataset features to obtain a model prediction.</p>
     <p id="status" role="status">Loading ONNX model...</p>
 
@@ -179,8 +178,6 @@
 
         button.disabled = true;
         status.textContent = "Making prediction...";
-
-        // Hide any previous prediction.
         document.getElementById("result").hidden = true;
 
         try {
@@ -216,6 +213,7 @@
             )
           };
 
+          // Run ONNX inference.
           const outputs = await session.run(feeds);
 
           console.log(
@@ -223,43 +221,64 @@
             Object.keys(outputs)
           );
 
-          // Use the names returned by the browser runtime.
+          console.log("Label output:", outputs["label"]);
+          console.log(
+            "Probability output:",
+            outputs["probabilities"]
+          );
+
+          // Read outputs using the names returned by the browser.
           const labelOutput = outputs["label"];
           const probabilityOutput = outputs["probabilities"];
 
           if (!labelOutput || !probabilityOutput) {
             throw new Error(
-              "Expected label/probabilities outputs. Actual keys: " +
+              "Expected outputs not found. Actual outputs: " +
               Object.keys(outputs).join(", ")
             );
           }
 
-          if (
-            !labelOutput.data ||
-            !probabilityOutput.data
-          ) {
-            throw new Error(
-              "Model outputs do not contain readable tensor data."
-            );
+          // Read predicted label.
+          if (!labelOutput.data || labelOutput.data.length === 0) {
+            throw new Error("Label output contains no readable data.");
           }
 
           const label = labelOutput.data[0];
 
-          // Read the numeric probabilities from the output tensor.
-          const probabilities = Array.from(
-            probabilityOutput.data
-          );
+          // Read probability values.
+          // This supports ordinary tensors and detects ZipMap output.
+          let probabilities;
+
+          if (probabilityOutput.data) {
+            probabilities = Array.from(probabilityOutput.data);
+          } else if (Array.isArray(probabilityOutput)) {
+            // ZipMap outputs can be represented as a sequence of maps.
+            const first = probabilityOutput[0];
+
+            if (first instanceof Map) {
+              probabilities = Array.from(first.values());
+            } else if (first && typeof first === "object") {
+              probabilities = Object.values(first);
+            } else {
+              throw new Error("Unsupported probability output format.");
+            }
+          } else {
+            throw new Error("Probability output is not a readable tensor.");
+          }
 
           if (
             probabilities.length === 0 ||
-            !probabilities.every(Number.isFinite)
+            !probabilities.every(
+              value => Number.isFinite(Number(value))
+            )
           ) {
-            throw new Error(
-              "The model returned invalid probabilities."
-            );
+            throw new Error("The model returned invalid probabilities.");
           }
 
-          const confidence = Math.max(...probabilities);
+          // Maximum class probability.
+          const confidence = Math.max(
+            ...probabilities.map(Number)
+          );
 
           document.getElementById("predicted-class").textContent =
             String(label);
@@ -268,7 +287,6 @@
             (confidence * 100).toFixed(2) + "%";
 
           document.getElementById("result").hidden = false;
-
           status.textContent = "Prediction completed successfully.";
 
         } catch (error) {
