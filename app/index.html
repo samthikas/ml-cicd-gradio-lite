@@ -15,6 +15,7 @@
       margin: 0;
       padding: 30px 15px;
     }
+
     .container {
       max-width: 520px;
       margin: auto;
@@ -23,8 +24,10 @@
       border-radius: 14px;
       box-shadow: 0 4px 18px #0001;
     }
+
     h1 { text-align: center; color: #174ea6; }
     label { display: block; margin-top: 15px; font-weight: bold; }
+
     input, select, button {
       box-sizing: border-box;
       width: 100%;
@@ -34,6 +37,7 @@
       border-radius: 7px;
       font-size: 15px;
     }
+
     button {
       background: #1769e0;
       color: white;
@@ -41,7 +45,9 @@
       cursor: pointer;
       margin-top: 22px;
     }
+
     button:disabled { background: #8aa9d8; cursor: wait; }
+
     #result {
       margin-top: 20px;
       padding: 15px;
@@ -49,6 +55,7 @@
       border-radius: 8px;
       overflow-wrap: anywhere;
     }
+
     #status { color: #555; text-align: center; }
   </style>
 </head>
@@ -104,14 +111,18 @@
 
     async function loadModel() {
       const status = document.getElementById("status");
+      const button = document.getElementById("predict-btn");
 
       try {
         session = await ort.InferenceSession.create(
           "model/drug_model.onnx"
         );
 
+        console.log("Model inputs:", session.inputNames);
+        console.log("Model outputs:", session.outputNames);
+
         status.textContent = "Model loaded successfully.";
-        document.getElementById("predict-btn").disabled = false;
+        button.disabled = false;
       } catch (error) {
         status.textContent =
           "Model loading failed: " + error.message;
@@ -125,41 +136,88 @@
 
         if (!session) return;
 
-        const age = Number(document.getElementById("age").value);
+        const age = Number(
+          document.getElementById("age").value
+        );
+
         const naToK = Number(
           document.getElementById("na_to_k").value
         );
 
-        if (age <= 0 || naToK <= 0 ||
-            !Number.isFinite(age) || !Number.isFinite(naToK)) {
-          alert("Enter valid positive values.");
+        if (
+          age < 1 || age > 120 ||
+          naToK <= 0 ||
+          !Number.isFinite(age) ||
+          !Number.isFinite(naToK)
+        ) {
+          alert("Enter valid values for Age and Na_to_K.");
           return;
         }
 
         const button = document.getElementById("predict-btn");
+        const status = document.getElementById("status");
+
         button.disabled = true;
+        status.textContent = "Making prediction...";
 
         try {
           const feeds = {
-            Sex: new ort.Tensor("string",
-              [document.getElementById("sex").value], [1, 1]),
-            BP: new ort.Tensor("string",
-              [document.getElementById("bp").value], [1, 1]),
-            Cholesterol: new ort.Tensor("string",
-              [document.getElementById("cholesterol").value], [1, 1]),
-            Age: new ort.Tensor("float32",
-              Float32Array.from([age]), [1, 1]),
-            Na_to_K: new ort.Tensor("float32",
-              Float32Array.from([naToK]), [1, 1])
+            Sex: new ort.Tensor(
+              "string",
+              [document.getElementById("sex").value],
+              [1, 1]
+            ),
+            BP: new ort.Tensor(
+              "string",
+              [document.getElementById("bp").value],
+              [1, 1]
+            ),
+            Cholesterol: new ort.Tensor(
+              "string",
+              [document.getElementById("cholesterol").value],
+              [1, 1]
+            ),
+            Age: new ort.Tensor(
+              "float32",
+              Float32Array.from([age]),
+              [1, 1]
+            ),
+            Na_to_K: new ort.Tensor(
+              "float32",
+              Float32Array.from([naToK]),
+              [1, 1]
+            )
           };
 
-          
-          const output = await session.run(feeds);
+          const outputs = await session.run(feeds);
 
-          const label = output.output_label.data[0];
-          const probabilities = output.output_probability.data;
+          console.log("Returned output keys:", Object.keys(outputs));
+
+          // Use the model's actual output names.
+          const labelOutput = outputs["output_label"];
+          const probabilityOutput = outputs["output_probability"];
+
+          if (!labelOutput || !probabilityOutput) {
+            throw new Error(
+              "Expected outputs not found. Actual outputs: " +
+              Object.keys(outputs).join(", ")
+            );
+          }
+
+          const label = labelOutput.data[0];
+
+          // ZipMap is disabled in train.py, so probabilities
+          // should be a numeric tensor.
+          const probabilities = Array.from(probabilityOutput.data);
+
+          if (
+            probabilities.length === 0 ||
+            !probabilities.every(Number.isFinite)
+          ) {
+            throw new Error("Model returned invalid probabilities.");
+          }
+
           const confidence = Math.max(...probabilities);
-
 
           document.getElementById("predicted-class").textContent =
             String(label);
@@ -168,9 +226,12 @@
             (confidence * 100).toFixed(2) + "%";
 
           document.getElementById("result").hidden = false;
+          status.textContent = "Prediction completed successfully.";
+
         } catch (error) {
-          document.getElementById("status").textContent =
+          status.textContent =
             "Prediction failed: " + error.message;
+
           console.error("Prediction error:", error);
         } finally {
           button.disabled = false;
