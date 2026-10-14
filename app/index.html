@@ -1,0 +1,180 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drug Classification | ML CI/CD</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f4f8;
+      margin: 0;
+      padding: 30px 15px;
+    }
+    .container {
+      max-width: 520px;
+      margin: auto;
+      background: white;
+      padding: 25px;
+      border-radius: 14px;
+      box-shadow: 0 4px 18px #0001;
+    }
+    h1 { text-align: center; color: #174ea6; }
+    label { display: block; margin-top: 15px; font-weight: bold; }
+    input, select, button {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 11px;
+      margin-top: 6px;
+      border: 1px solid #ccd2dc;
+      border-radius: 7px;
+      font-size: 15px;
+    }
+    button {
+      background: #1769e0;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-top: 22px;
+    }
+    button:disabled { background: #8aa9d8; cursor: wait; }
+    #result {
+      margin-top: 20px;
+      padding: 15px;
+      background: #eef6ff;
+      border-radius: 8px;
+      overflow-wrap: anywhere;
+    }
+    #status { color: #555; text-align: center; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Drug Classification</h1>
+    <p>Enter the dataset features to obtain a model prediction.</p>
+    <p id="status">Loading ONNX model...</p>
+
+    <form id="predict-form">
+      <label for="age">Age</label>
+      <input id="age" type="number" min="1" max="120"
+             value="30" required>
+
+      <label for="sex">Sex</label>
+      <select id="sex">
+        <option value="F">Female (F)</option>
+        <option value="M">Male (M)</option>
+      </select>
+
+      <label for="bp">Blood Pressure</label>
+      <select id="bp">
+        <option value="LOW">Low</option>
+        <option value="NORMAL" selected>Normal</option>
+        <option value="HIGH">High</option>
+      </select>
+
+      <label for="cholesterol">Cholesterol</label>
+      <select id="cholesterol">
+        <option value="NORMAL">Normal</option>
+        <option value="HIGH" selected>High</option>
+      </select>
+
+      <label for="na_to_k">Na_to_K</label>
+      <input id="na_to_k" type="number" min="0.01"
+             step="any" value="15" required>
+
+      <button id="predict-btn" type="submit" disabled>
+        Predict
+      </button>
+    </form>
+
+    <div id="result" hidden>
+      <h3>Prediction Result</h3>
+      <p>Predicted class: <strong id="predicted-class"></strong></p>
+      <p>Model confidence: <strong id="confidence"></strong></p>
+    </div>
+  </div>
+
+  <script>
+    let session = null;
+
+    async function loadModel() {
+      const status = document.getElementById("status");
+
+      try {
+        session = await ort.InferenceSession.create(
+          "model/drug_model.onnx"
+        );
+
+        status.textContent = "Model loaded successfully.";
+        document.getElementById("predict-btn").disabled = false;
+      } catch (error) {
+        status.textContent =
+          "Model loading failed: " + error.message;
+        console.error("ONNX loading error:", error);
+      }
+    }
+
+    document.getElementById("predict-form")
+      .addEventListener("submit", async function(event) {
+        event.preventDefault();
+
+        if (!session) return;
+
+        const age = Number(document.getElementById("age").value);
+        const naToK = Number(
+          document.getElementById("na_to_k").value
+        );
+
+        if (age <= 0 || naToK <= 0 ||
+            !Number.isFinite(age) || !Number.isFinite(naToK)) {
+          alert("Enter valid positive values.");
+          return;
+        }
+
+        const button = document.getElementById("predict-btn");
+        button.disabled = true;
+
+        try {
+          const feeds = {
+            Sex: new ort.Tensor("string",
+              [document.getElementById("sex").value], [1, 1]),
+            BP: new ort.Tensor("string",
+              [document.getElementById("bp").value], [1, 1]),
+            Cholesterol: new ort.Tensor("string",
+              [document.getElementById("cholesterol").value], [1, 1]),
+            Age: new ort.Tensor("float32",
+              Float32Array.from([age]), [1, 1]),
+            Na_to_K: new ort.Tensor("float32",
+              Float32Array.from([naToK]), [1, 1])
+          };
+
+          const output = await session.run(feeds);
+          const label = output.label.data[0];
+          const probabilities = output.probabilities.data;
+          const confidence = Math.max(...probabilities);
+
+          document.getElementById("predicted-class").textContent =
+            String(label);
+
+          document.getElementById("confidence").textContent =
+            (confidence * 100).toFixed(2) + "%";
+
+          document.getElementById("result").hidden = false;
+        } catch (error) {
+          document.getElementById("status").textContent =
+            "Prediction failed: " + error.message;
+          console.error("Prediction error:", error);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+    loadModel();
+  </script>
+</body>
+</html>
