@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   train-and-evaluate:
@@ -36,7 +35,7 @@ jobs:
       - name: Train model
         run: python train.py
 
-      - name: Save metrics as workflow artifact
+      - name: Upload evaluation artifacts
         uses: actions/upload-artifact@v4
         with:
           name: model-evaluation
