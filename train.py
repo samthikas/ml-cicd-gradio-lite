@@ -82,14 +82,12 @@ try:
         ("Na_to_K", FloatTensorType([None, 1])),
     ]
 
-    
     onnx_model = convert_sklearn(
         pipeline,
         initial_types=initial_types,
         target_opset=17,
         options={id(pipeline.steps[-1][1]): {"zipmap": False}},
     )
-
 
     with open("model/drug_model.onnx", "wb") as file:
         file.write(onnx_model.SerializeToString())
