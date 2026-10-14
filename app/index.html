@@ -9,6 +9,10 @@
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
 
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: Arial, sans-serif;
       background: #f0f4f8;
@@ -25,11 +29,18 @@
       box-shadow: 0 4px 18px #0001;
     }
 
-    h1 { text-align: center; color: #174ea6; }
-    label { display: block; margin-top: 15px; font-weight: bold; }
+    h1 {
+      text-align: center;
+      color: #174ea6;
+    }
+
+    label {
+      display: block;
+      margin-top: 15px;
+      font-weight: bold;
+    }
 
     input, select, button {
-      box-sizing: border-box;
       width: 100%;
       padding: 11px;
       margin-top: 6px;
@@ -46,7 +57,10 @@
       margin-top: 22px;
     }
 
-    button:disabled { background: #8aa9d8; cursor: wait; }
+    button:disabled {
+      background: #8aa9d8;
+      cursor: wait;
+    }
 
     #result {
       margin-top: 20px;
@@ -56,15 +70,20 @@
       overflow-wrap: anywhere;
     }
 
-    #status { color: #555; text-align: center; }
+    #status {
+      color: #555;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
   </style>
 </head>
 
 <body>
   <div class="container">
     <h1>Drug Classification</h1>
+
     <p>Enter the dataset features to obtain a model prediction.</p>
-    <p id="status">Loading ONNX model...</p>
+    <p id="status" role="status">Loading ONNX model...</p>
 
     <form id="predict-form">
       <label for="age">Age</label>
@@ -145,12 +164,13 @@
         );
 
         if (
-          age < 1 || age > 120 ||
-          naToK <= 0 ||
           !Number.isFinite(age) ||
-          !Number.isFinite(naToK)
+          age < 1 ||
+          age > 120 ||
+          !Number.isFinite(naToK) ||
+          naToK <= 0
         ) {
-          alert("Enter valid values for Age and Na_to_K.");
+          alert("Enter a valid age and positive Na_to_K value.");
           return;
         }
 
@@ -160,6 +180,9 @@
         button.disabled = true;
         status.textContent = "Making prediction...";
 
+        // Hide any previous prediction.
+        document.getElementById("result").hidden = true;
+
         try {
           const feeds = {
             Sex: new ort.Tensor(
@@ -167,21 +190,25 @@
               [document.getElementById("sex").value],
               [1, 1]
             ),
+
             BP: new ort.Tensor(
               "string",
               [document.getElementById("bp").value],
               [1, 1]
             ),
+
             Cholesterol: new ort.Tensor(
               "string",
               [document.getElementById("cholesterol").value],
               [1, 1]
             ),
+
             Age: new ort.Tensor(
               "float32",
               Float32Array.from([age]),
               [1, 1]
             ),
+
             Na_to_K: new ort.Tensor(
               "float32",
               Float32Array.from([naToK]),
@@ -191,30 +218,45 @@
 
           const outputs = await session.run(feeds);
 
-          console.log("Returned output keys:", Object.keys(outputs));
+          console.log(
+            "Actual output keys:",
+            Object.keys(outputs)
+          );
 
-          // Use the model's actual output names.
-          const labelOutput = outputs["output_label"];
-          const probabilityOutput = outputs["output_probability"];
+          // Use the names returned by the browser runtime.
+          const labelOutput = outputs["label"];
+          const probabilityOutput = outputs["probabilities"];
 
           if (!labelOutput || !probabilityOutput) {
             throw new Error(
-              "Expected outputs not found. Actual outputs: " +
+              "Expected label/probabilities outputs. Actual keys: " +
               Object.keys(outputs).join(", ")
+            );
+          }
+
+          if (
+            !labelOutput.data ||
+            !probabilityOutput.data
+          ) {
+            throw new Error(
+              "Model outputs do not contain readable tensor data."
             );
           }
 
           const label = labelOutput.data[0];
 
-          // ZipMap is disabled in train.py, so probabilities
-          // should be a numeric tensor.
-          const probabilities = Array.from(probabilityOutput.data);
+          // Read the numeric probabilities from the output tensor.
+          const probabilities = Array.from(
+            probabilityOutput.data
+          );
 
           if (
             probabilities.length === 0 ||
             !probabilities.every(Number.isFinite)
           ) {
-            throw new Error("Model returned invalid probabilities.");
+            throw new Error(
+              "The model returned invalid probabilities."
+            );
           }
 
           const confidence = Math.max(...probabilities);
@@ -226,6 +268,7 @@
             (confidence * 100).toFixed(2) + "%";
 
           document.getElementById("result").hidden = false;
+
           status.textContent = "Prediction completed successfully.";
 
         } catch (error) {
